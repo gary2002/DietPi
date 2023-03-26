@@ -5,6 +5,7 @@
 # APT dependencies: https://github.com/dani-garcia/vaultwarden/wiki/Building-binary#dependencies
 # - Git for ARMv8 workaround below: https://github.com/rust-lang/cargo/issues/10583
 adeps_build=('gcc' 'libc6-dev' 'pkg-config' 'libssl-dev' 'git')
+(( $G_HW_ARCH == 11 )) && adeps_build+=('patch')
 adeps=('libc6' 'openssl')
 (( $G_DISTRO > 6 )) && adeps+=('libssl3') || adeps+=('libssl1.1')
 G_AGUP
@@ -41,7 +42,50 @@ G_EXEC curl -sSfLO "https://github.com/dani-garcia/vaultwarden/archive/$version.
 G_EXEC tar xf "$version.tar.gz"
 G_EXEC rm "$version.tar.gz"
 G_EXEC cd "vaultwarden-$version"
-G_EXEC_OUTPUT=1 G_EXEC cargo build --features sqlite --release
+# - RISC-V workaround
+if (( $G_HW_ARCH == 11 ))
+then
+	G_CONFIG_INJECT '\[patch.crates-io\]' '[patch.crates-io]' Cargo.toml
+	G_EXEC sed -i '/\[patch.crates-io\]/a\ring = { git = "https://github.com/MichaIng/ring", branch = "0.17.0-riscv" }' Cargo.toml
+	patch -p1 << '_EOF_' || exit 1
+--- a/Cargo.lock 2023-03-26 21:25:15.598437008 +0200
++++ b/Cargo.lock 2023-03-26 21:28:21.265101072 +0200
+@@ -2412,16 +2412,14 @@
+
+ [[package]]
+ name = "ring"
+ version = "0.16.20"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "3053cf52e236a3ed746dfc745aa9cacf1b791d846bdaf412f60a8d7d6e17c8fc"
++source = "git+https://github.com/MichaIng/ring?branch=0.17.0-riscv#012f15b2795865f85579e142bd4ee76bb6896c5b"
+ dependencies = [
+  "cc",
++ "getrandom",
+  "libc",
+- "once_cell",
+- "spin 0.5.2",
++ "spin 0.9.6",
+  "untrusted",
+- "web-sys",
+  "winapi",
+ ]
+
+@@ -2856,12 +2854,6 @@
+
+ [[package]]
+ name = "spin"
+-version = "0.5.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "6e63cff320ae2c57904679ba7cb63280a3dc4613885beafb148ee7bf9aa9042d"
+-
+-[[package]]
+-name = "spin"
+ version = "0.9.6"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "b5d6e0250b93c8427a177b849d144a96d5acc57006149479403d7861ab721e34"
+_EOF_
+fi
+RUST_BACKTRACE=1 G_EXEC_OUTPUT=1 G_EXEC cargo build --features sqlite --release
 G_EXEC rustup self uninstall -y
 G_EXEC strip --remove-section=.comment --remove-section=.note target/release/vaultwarden
 
